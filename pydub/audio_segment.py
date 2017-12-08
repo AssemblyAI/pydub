@@ -7,7 +7,7 @@ from tempfile import TemporaryFile, NamedTemporaryFile
 import wave
 import sys
 import struct
-from .logging_utils import log_conversion
+from .logging_utils import log_conversion, log_subprocess_output
 import base64
 
 try:
@@ -671,8 +671,12 @@ class AudioSegment(object):
         log_conversion(conversion_command)
 
         # read stdin / write stdout
-        p = subprocess.Popen(conversion_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        with open(os.devnull, 'rb') as devnull:
+            p = subprocess.Popen(conversion_command, stdin=devnull, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         p_out, p_err = p.communicate()
+
+        log_subprocess_output(p_out)
+        log_subprocess_output(p_err)
 
         if p.returncode != 0:
             raise CouldntEncodeError("Encoding failed. ffmpeg/avlib returned error code: {0}\n\nCommand:{1}\n\nOutput from ffmpeg/avlib:\n\n{2}".format(p.returncode, conversion_command, p_err))
@@ -744,11 +748,13 @@ class AudioSegment(object):
         if channels == 2 and self.channels == 1:
             fn = audioop.tostereo
             frame_width = self.frame_width * 2
+            fac = 1
         elif channels == 1 and self.channels == 2:
             fn = audioop.tomono
             frame_width = self.frame_width // 2
+            fac = 0.5
 
-        converted = fn(self._data, self.sample_width, 1, 1)
+        converted = fn(self._data, self.sample_width, fac, fac)
 
         return self._spawn(data=converted,
                            overrides={
